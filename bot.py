@@ -30,7 +30,7 @@ def build_embed(rows):
         timestamp=datetime.now(timezone.utc)
     )
 
-    embed.set_thumbnail(url=bot.user.display_avatar.url)
+    #embed.set_thumbnail(url=bot.user.display_avatar.url)
 
     lines = [
         "```",
