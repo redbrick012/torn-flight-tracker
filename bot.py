@@ -34,7 +34,7 @@ def build_embed(rows):
 
     lines = [
         "```",
-        "🌍 Destination       | 🛫 Out | 🛬 In ",
+        "🌍 Destination    | 🛫 Out | Landed | 🛬 In ",
         "────────────────────────────────────────"
     ]
 
@@ -48,6 +48,7 @@ def build_embed(rows):
             f"{dest:<18} | "
             f"{outb:^6} | "
             f"{inbound:^6} | "
+            f"{returning:^6}"
         )
 
     lines.append("```")
