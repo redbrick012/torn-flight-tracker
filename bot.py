@@ -34,18 +34,18 @@ def build_embed(rows):
 
     lines = [
         "```",
-        "🌍 Destination    | 🛫 Out | Landed | 🛬 In ",
+        "🌍 Destination  | 🛫 Out | Landed | 🛬 In ",
         "────────────────────────────────────────"
     ]
 
-    for row in rows[1:]:  # skip headers
+    for row in rows[2:]:  # skip headers
         if len(row) < 4:
             continue
 
         dest, outb, inbound, returning = row[:4]
 
         lines.append(
-            f"{dest:<18} | "
+            f"{dest:<16} | "
             f"{outb:^6} | "
             f"{inbound:^6} | "
             f"{returning:^6}"
