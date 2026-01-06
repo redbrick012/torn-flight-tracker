@@ -42,7 +42,7 @@ def build_embed(rows):
         if len(row) < 7:
             continue
 
-        dest, outb, inbound, returning, purch, travsug, icc = row[:4]
+        dest, outb, inbound, returning, purch, travsug, icc = row[:7]
         lines.append(
             f"{icc:<7} | "
             f"{outb:^6} | "
