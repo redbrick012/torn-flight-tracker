@@ -34,7 +34,7 @@ def build_embed(rows):
 
     lines = [
         "```",
-        "🌍 | 🛫 Out | Land | 🛬 In  | Itm ",
+        "🌍   | 🛫 Out | Land | 🛬 In  | Itm ",
         "────────────────────────────────────────"
     ]
 
@@ -44,7 +44,7 @@ def build_embed(rows):
 
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
         lines.append(
-            f"{icc:<3} | "
+            f"{icc:<4} | "
             f"{outb:^5} | "
             f"{inbound:^5} | "
             f"{returning:^5} | "
@@ -59,7 +59,7 @@ def build_embed(rows):
         inline=False
     )
 
-    embed.set_footer(text="Auto-updates every 5 minutes")
+    embed.set_footer(text="Auto-updates every 5 minutes. *Recommended only for Business Class travellers")
     return embed
 
 # =====================
