@@ -34,7 +34,7 @@ def build_embed(rows):
 
     lines = [
         "```",
-        "🌍 Destination  | 🛫 Out | Landed | 🛬 In ",
+        "🌍 Dest | 🛫 Out | Landed | 🛬 In  | Item ",
         "────────────────────────────────────────"
     ]
 
@@ -42,13 +42,13 @@ def build_embed(rows):
         if len(row) < 4:
             continue
 
-        dest, outb, inbound, returning = row[:4]
-
+        dest, outb, inbound, returning, purch, travsug, icc = row[:4]
         lines.append(
-            f"{dest:<16} | "
+            f"{icc:<7} | "
             f"{outb:^6} | "
             f"{inbound:^6} | "
-            f"{returning:^6}"
+            f"{returning:^6} | "
+            f"{purch:^6}"
         )
 
     lines.append("```")
