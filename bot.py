@@ -39,7 +39,7 @@ def build_embed(rows):
     ]
 
     for row in rows[2:]:  # skip headers
-        if len(row) < 4:
+        if len(row) < 7:
             continue
 
         dest, outb, inbound, returning, purch, travsug, icc = row[:4]
