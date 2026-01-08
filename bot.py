@@ -30,36 +30,31 @@ def build_embed(rows):
         timestamp=datetime.now(timezone.utc)
     )
 
-    #embed.set_thumbnail(url=bot.user.display_avatar.url)
-
-    lines = [
-        "```",
-        "🌍   | 🛫 Out | Land | 🛬 In  | Itm ",
-        "────────────────────────────────────────"
-    ]
-
     for row in rows[2:]:  # skip headers
         if len(row) < 7:
             continue
 
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
-        lines.append(
-            f"{icc:<4} | "
-            f"{outb:^5} | "
-            f"{inbound:^5} | "
-            f"{returning:^5} | "
-            f"{purch:^5}"
+
+        # Safe numeric display
+        outb = outb or "0"
+        inbound = inbound or "0"
+        returning = returning or "0"
+
+        embed.add_field(
+            name=f"{icc} {dest}",
+            value=(
+                f"🛫 Out: **{outb}** "
+                f"🛬 In: **{inbound}** "
+                f"↩ Return: **{returning}**\n"
+                f"📦 Item: **{purch}**"
+            ),
+            inline=False
         )
 
-    lines.append("```")
-
-    embed.add_field(
-        name="Current Flights",
-        value="\n".join(lines),
-        inline=False
+    embed.set_footer(
+        text="Auto-updates every 5 minutes · Business Class recommended"
     )
-
-    embed.set_footer(text="Auto-updates every 5 minutes. *Recommended only for Business Class travellers")
     return embed
 
 # =====================
