@@ -43,7 +43,7 @@ def country_emoji(country: str) -> str:
 # =====================
 def build_embed(rows):
     embed = discord.Embed(
-        title="✈️ Torn City Flight Tracker",
+        title="✈️ Smugglers Flight Paths",
         color=discord.Color.blue(),
         timestamp=datetime.now(timezone.utc)
     )
