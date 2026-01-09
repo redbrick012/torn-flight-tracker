@@ -58,6 +58,7 @@ def build_embed(rows):
         outb = outb or "0"
         inbound = inbound or "0"
         returning = returning or "0"
+        purch = purch or "-"
 
         flag = country_emoji(dest)
 
