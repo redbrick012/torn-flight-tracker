@@ -48,17 +48,23 @@ def build_embed(rows):
         timestamp=datetime.now(timezone.utc)
     )
 
-    for row in rows[2:]:  # skip headers
+    # 🔤 Sort alphabetically by destination
+    sorted_rows = sorted(
+        rows[2:], 
+        key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
+    )
+
+    for row in sorted_rows:
         if len(row) < 7:
             continue
 
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
 
-        # Safe numeric display
-        outb = outb or "-"
-        inbound = inbound or "-"
-        returning = returning or "-"
+        outb = outb or "0"
+        inbound = inbound or "0"
+        returning = returning or "0"
         purch = purch or "-"
+        icc = icc or ""
 
         flag = country_emoji(dest)
 
@@ -74,9 +80,10 @@ def build_embed(rows):
         )
 
     embed.set_footer(
-        text="Auto-updates every 5 minutes · Business Class recommended"
+        text="!Business Class recommended. Auto-updates every 5 minutes."
     )
     return embed
+
 
 
 # =====================
