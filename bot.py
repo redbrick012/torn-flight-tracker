@@ -69,7 +69,7 @@ def build_embed(rows):
         flag = country_emoji(dest)
 
         embed.add_field(
-            name=f"{flag} {dest}",
+            name=f"{flag} {icc}{dest}",
             value=(
                 f"🛫 Out: **{outb}** "
                 f"🛬 In: **{inbound}** "
