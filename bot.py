@@ -60,16 +60,16 @@ def build_embed(rows):
 
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
 
-        outb = outb or "0"
-        inbound = inbound or "0"
-        returning = returning or "0"
+        outb = outb or "-"
+        inbound = inbound or "-"
+        returning = returning or "-"
         purch = purch or "-"
         icc = icc or ""
 
         flag = country_emoji(dest)
 
         embed.add_field(
-            name=f"{flag} {icc}{dest}",
+            name=f"{flag}{icc} {dest}",
             value=(
                 f"🛫 Out: **{outb}** "
                 f"🛬 In: **{inbound}** "
