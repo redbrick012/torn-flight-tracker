@@ -55,9 +55,9 @@ def build_embed(rows):
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
 
         # Safe numeric display
-        outb = outb or "0"
-        inbound = inbound or "0"
-        returning = returning or "0"
+        outb = outb or "-"
+        inbound = inbound or "-"
+        returning = returning or "-"
         purch = purch or "-"
 
         flag = country_emoji(dest)
