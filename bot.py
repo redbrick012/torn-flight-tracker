@@ -10,7 +10,7 @@ from sheets import get_sheet_values
 # ENV
 # =====================
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
-SPREADSHEET_SHEET = os.environ.get("FLIGHT_SHEET", "Flights")
+SPREADSHEET_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
 CHANNEL_ID = int(os.environ["FLIGHT_CHANNEL_ID"])
 
 STATE_FILE = "flight_state.json"
