@@ -1,4 +1,5 @@
 import os
+import json
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timezone
@@ -12,20 +13,42 @@ DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 SPREADSHEET_SHEET = os.environ.get("FLIGHT_SHEET", "Flights")
 CHANNEL_ID = int(os.environ["FLIGHT_CHANNEL_ID"])
 
+STATE_FILE = "flight_state.json"
+
+# =====================
+# STATE
+# =====================
+def load_state():
+    if not os.path.exists(STATE_FILE):
+        return {}
+    try:
+        with open(STATE_FILE, "r") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return {}
+
+def save_state(state):
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
+
+state = load_state()
+posted_message_id = state.get("posted_message_id")
+
 # =====================
 # DISCORD
 # =====================
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-posted_message_id = None
-
+# =====================
+# FLAGS
+# =====================
 COUNTRY_EMOJIS = {
     "Torn": "<:city:1458205750617833596>",
     "Mexico": "<:mx:1458203844474572801>",
     "Cayman Islands": "<:ky:1458203876544221459>",
     "Canada": "<:ca:1458204026813415517>",
-    "Hawaii": "<:ushi:1458203802342522981>",  # US state, not country
+    "Hawaii": "<:ushi:1458203802342522981>",
     "United Kingdom": "<:gb:1458203934647910441>",
     "Argentina": "<:ar:1458204051970986170>",
     "Switzerland": "<:ch:1458203997964861590>",
@@ -48,9 +71,8 @@ def build_embed(rows):
         timestamp=datetime.now(timezone.utc)
     )
 
-    # 🔤 Sort alphabetically by destination
     sorted_rows = sorted(
-        rows[2:], 
+        rows[2:],
         key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
     )
 
@@ -79,47 +101,78 @@ def build_embed(rows):
             inline=False
         )
 
-    embed.set_footer(
-        text="!Business Class recommended. Auto-updates every 5 minutes."
-    )
+    embed.set_footer(text="Auto-updates every 5 minutes")
     return embed
 
+# =====================
+# UPDATE LOGIC
+# =====================
+async def update_flight_message(force_new=False):
+    global posted_message_id, state
 
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        return "❌ Channel not found"
+
+    rows = get_sheet_values(SPREADSHEET_SHEET)
+    if not rows:
+        return "❌ No sheet data"
+
+    embed = build_embed(rows)
+
+    if posted_message_id and not force_new:
+        try:
+            msg = await channel.fetch_message(posted_message_id)
+            await msg.edit(embed=embed)
+            return "✅ Updated existing message"
+        except discord.NotFound:
+            posted_message_id = None
+
+    msg = await channel.send(embed=embed)
+    posted_message_id = msg.id
+    state["posted_message_id"] = msg.id
+    save_state(state)
+
+    return "🆕 Posted new message"
 
 # =====================
 # LOOP
 # =====================
 @tasks.loop(minutes=5)
 async def flight_task():
-    global posted_message_id
+    await update_flight_message()
 
-    channel = bot.get_channel(CHANNEL_ID)
-    if not channel:
-        return
+# =====================
+# SLASH COMMANDS
+# =====================
+@bot.tree.command(name="refresh", description="Force refresh the flight embed")
+async def refresh(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    result = await update_flight_message()
+    await interaction.followup.send(result, ephemeral=True)
 
-    rows = get_sheet_values(SPREADSHEET_SHEET)
-    if not rows:
-        return
+@bot.tree.command(name="forcepost", description="Post a brand new message")
+async def forcepost(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    result = await update_flight_message(force_new=True)
+    await interaction.followup.send(result, ephemeral=True)
 
-    embed = build_embed(rows)
-
-    if posted_message_id:
-        try:
-            msg = await channel.fetch_message(posted_message_id)
-            await msg.edit(embed=embed)
-        except discord.NotFound:
-            msg = await channel.send(embed=embed)
-            posted_message_id = msg.id
-    else:
-        msg = await channel.send(embed=embed)
-        posted_message_id = msg.id
+@bot.tree.command(name="status", description="Show bot message status")
+async def status(interaction: discord.Interaction):
+    msg = (
+        f"📌 Message ID: `{posted_message_id}`"
+        if posted_message_id
+        else "⚠️ No message stored"
+    )
+    await interaction.response.send_message(msg, ephemeral=True)
 
 # =====================
 # EVENTS
 # =====================
 @bot.event
 async def on_ready():
-    print(f"✅ Flight bot logged in as {bot.user}")
+    print(f"✅ Logged in as {bot.user}")
+    await bot.tree.sync()
     if not flight_task.is_running():
         flight_task.start()
 
