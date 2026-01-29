@@ -3,12 +3,18 @@ import requests
 from datetime import datetime, timezone
 from sheets import get_sheet_values, set_message_id
 
+# =====================
+# ENV
+# =====================
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = os.environ["FLIGHT_CHANNEL_ID"]
 SHEET_NAME = os.environ.get("FLIGHT_SHEET", "travelDestinations")
 
 API_BASE = "https://discord.com/api/v10"
 
+# =====================
+# FLAGS
+# =====================
 COUNTRY_EMOJIS = {
     "Torn": "🏙️",
     "Mexico": "🇲🇽",
@@ -27,6 +33,9 @@ COUNTRY_EMOJIS = {
 def country_emoji(country: str) -> str:
     return COUNTRY_EMOJIS.get(country, "🌍")
 
+# =====================
+# EMBED BUILDER
+# =====================
 def build_embed(rows):
     fields = []
     sorted_rows = sorted(rows[2:], key=lambda r: r[0].lower() if r and r[0] else "")
@@ -52,6 +61,9 @@ def build_embed(rows):
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
+# =====================
+# DISCORD HELPERS
+# =====================
 def discord_headers():
     return {"Authorization": f"Bot {DISCORD_TOKEN}", "Content-Type": "application/json"}
 
@@ -66,17 +78,30 @@ def post_message(embed):
     r.raise_for_status()
     return r.json()["id"]
 
+# =====================
+# MAIN
+# =====================
 def main():
     rows = get_sheet_values(SHEET_NAME)
-    stored_message_id = rows[0][0] if rows and rows[0] else None
+
+    # Safe read of stored message ID
+    stored_message_id = None
+    if rows and rows[0]:
+        first_cell = rows[0][0].strip()
+        if first_cell.isdigit():
+            stored_message_id = first_cell
+
     embed = build_embed(rows)
+
     if stored_message_id:
         success = edit_message(stored_message_id, embed)
         if success:
-            print("✅ Updated existing message")
+            print(f"✅ Updated existing message {stored_message_id}")
             return
         else:
-            print("⚠️ Stored message missing, posting new")
+            print(f"⚠️ Stored message {stored_message_id} missing or deleted, posting new")
+
+    # Post new message if no valid ID
     new_id = post_message(embed)
     set_message_id(new_id, SHEET_NAME)
     print(f"🆕 Posted new message: {new_id}")
