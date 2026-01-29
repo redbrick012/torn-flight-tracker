@@ -1,15 +1,20 @@
 import os
+import json
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from datetime import datetime, timezone
 from sheets import get_sheet_values, write_message_id
 
+# =====================
+# ENV
+# =====================
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 SPREADSHEET_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
 CHANNEL_ID = int(os.environ["FLIGHT_CHANNEL_ID"])
+STATE_CELL = "A1"  # Where to store the Discord message ID
 
 # =====================
-# DISCORD SETUP
+# DISCORD
 # =====================
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -36,7 +41,7 @@ def country_emoji(country: str) -> str:
     return COUNTRY_EMOJIS.get(country, "🌍")
 
 # =====================
-# BUILD EMBED
+# EMBED BUILDER
 # =====================
 def build_embed(rows):
     embed = discord.Embed(
@@ -46,18 +51,22 @@ def build_embed(rows):
     )
 
     sorted_rows = sorted(
-        rows[2:], key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
+        rows[2:],  # skip headers
+        key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
     )
 
     for row in sorted_rows:
         if len(row) < 7:
             continue
+
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
+
         outb = outb or "-"
         inbound = inbound or "-"
         returning = returning or "-"
         purch = purch or "-"
         icc = icc or ""
+
         flag = country_emoji(dest)
 
         embed.add_field(
@@ -71,33 +80,67 @@ def build_embed(rows):
             inline=False
         )
 
-    embed.set_footer(text="Auto-updates via GitHub Actions")
+    embed.set_footer(text="Auto-updates every 5 minutes")
     return embed
 
 # =====================
-# POST OR UPDATE MESSAGE
+# UPDATE LOGIC
 # =====================
-async def update_flight_message(channel):
+async def update_flight_message(force_new=False):
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        return "❌ Channel not found"
+
     rows = get_sheet_values(SPREADSHEET_SHEET)
     if not rows:
         return "❌ No sheet data"
-    
+
     embed = build_embed(rows)
 
-    # Try reading existing message ID from sheet
-    existing_id = rows[0][0] if rows[0] else None
-    if existing_id:
+    # Read message ID from sheet
+    posted_message_id = rows[0][0] if rows[0] else None
+
+    if posted_message_id and not force_new:
         try:
-            msg = await channel.fetch_message(int(existing_id))
+            msg = await channel.fetch_message(int(posted_message_id))
             await msg.edit(embed=embed)
-            return f"✅ Updated existing message {existing_id}"
+            return "✅ Updated existing message"
         except discord.NotFound:
-            existing_id = None
+            posted_message_id = None
 
     # Post new message
     msg = await channel.send(embed=embed)
-    write_message_id(SPREADSHEET_SHEET, msg.id, cell="A1")
-    return f"🆕 Posted new message {msg.id}"
+    write_message_id(SPREADSHEET_SHEET, msg.id, cell=STATE_CELL)
+    return "🆕 Posted new message"
+
+# =====================
+# LOOP
+# =====================
+@tasks.loop(minutes=5)
+async def flight_task():
+    await update_flight_message()
+
+# =====================
+# SLASH COMMANDS
+# =====================
+@bot.tree.command(name="refresh", description="Force refresh the flight embed")
+async def refresh(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    result = await update_flight_message()
+    await interaction.followup.send(result, ephemeral=True)
+
+@bot.tree.command(name="forcepost", description="Post a brand new message")
+async def forcepost(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    result = await update_flight_message(force_new=True)
+    await interaction.followup.send(result, ephemeral=True)
+
+@bot.tree.command(name="status", description="Show bot message status")
+async def status(interaction: discord.Interaction):
+    rows = get_sheet_values(SPREADSHEET_SHEET)
+    posted_message_id = rows[0][0] if rows[0] else None
+    msg = f"📌 Message ID: `{posted_message_id}`" if posted_message_id else "⚠️ No message stored"
+    await interaction.response.send_message(msg, ephemeral=True)
 
 # =====================
 # EVENTS
@@ -105,13 +148,9 @@ async def update_flight_message(channel):
 @bot.event
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
-    channel = bot.get_channel(CHANNEL_ID)
-    if not channel:
-        print("❌ Channel not found")
-        return
-    result = await update_flight_message(channel)
-    print(result)
-    await bot.close()  # stop bot after posting once
+    await bot.tree.sync()
+    if not flight_task.is_running():
+        flight_task.start()
 
 # =====================
 # RUN
