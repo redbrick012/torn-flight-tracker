@@ -1,25 +1,29 @@
 name: Update Flights
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # manual trigger
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"  # run every 5 minutes
 
 jobs:
   update:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-      - uses: actions/setup-python@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      - run: |
+      - name: Install dependencies
+        run: |
           pip install gspread google-auth requests
 
-      - env:
+      - name: Run flight updater
+        env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           FLIGHT_CHANNEL_ID: ${{ secrets.FLIGHT_CHANNEL_ID }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
