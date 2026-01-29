@@ -12,6 +12,7 @@ DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 SPREADSHEET_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
 CHANNEL_ID = int(os.environ["FLIGHT_CHANNEL_ID"])
 STATE_CELL = "A1"  # Where to store the Discord message ID
+print("JSON length:", len(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")))
 
 # =====================
 # DISCORD
