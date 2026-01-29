@@ -1,0 +1,29 @@
+name: Update Flights
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - run: |
+          pip install gspread google-auth requests
+
+      - env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          FLIGHT_CHANNEL_ID: ${{ secrets.FLIGHT_CHANNEL_ID }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          FLIGHT_SHEET: travelDestinations
+        run: |
+          python update_flights.py
