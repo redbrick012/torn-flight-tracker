@@ -1,19 +1,22 @@
 import os
-import requests
+import discord
+from discord.ext import commands
 from datetime import datetime, timezone
 from sheets import get_sheet_values, write_message_id
 
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
-CHANNEL_ID = os.environ["FLIGHT_CHANNEL_ID"]
-SHEET_NAME = os.environ.get("FLIGHT_SHEET", "travelDestinations")
+SPREADSHEET_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
+CHANNEL_ID = int(os.environ["FLIGHT_CHANNEL_ID"])
 
-DISCORD_API = "https://discord.com/api/v10"
+# =====================
+# DISCORD SETUP
+# =====================
+intents = discord.Intents.default()
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-HEADERS = {
-    "Authorization": f"Bot {DISCORD_TOKEN}",
-    "Content-Type": "application/json"
-}
-
+# =====================
+# FLAGS
+# =====================
 COUNTRY_EMOJIS = {
     "Torn": "<:city:1458205750617833596>",
     "Mexico": "<:mx:1458203844474572801>",
@@ -29,74 +32,88 @@ COUNTRY_EMOJIS = {
     "South Africa": "<:za:1458204114524569640>",
 }
 
-def country_emoji(country):
+def country_emoji(country: str) -> str:
     return COUNTRY_EMOJIS.get(country, "🌍")
 
+# =====================
+# BUILD EMBED
+# =====================
 def build_embed(rows):
-    embed = {
-        "title": "✈️ Smugglers Flight Paths",
-        "color": 3447003,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "footer": {"text": "Auto-updates every 5 minutes"},
-        "fields": []
-    }
-
-    for row in sorted(rows[2:], key=lambda r: r[0].lower() if r and r[0] else ""):
-        if len(row) < 7:
-            continue
-
-        dest, outb, inbound, returning, purch, travsug, icc = row[:7]
-
-        field = {
-            "name": f"{country_emoji(dest)}{icc or ''} {dest}",
-            "value": (
-                f"🛫 Out: **{outb or '-'}** "
-                f"🛬 In: **{inbound or '-'}** "
-                f"↩ Return: **{returning or '-'}**\n"
-                f"📦 Item: **{purch or '-'}**"
-            ),
-            "inline": False
-        }
-
-        embed["fields"].append(field)
-
-    return embed
-
-def main():
-    rows = get_sheet_values(SHEET_NAME)
-
-    message_id = None
-    if rows and rows[0] and rows[0][0].isdigit():
-        message_id = rows[0][0]
-
-    embed = build_embed(rows)
-
-    payload = {"embeds": [embed]}
-
-    if message_id:
-        r = requests.patch(
-            f"{DISCORD_API}/channels/{CHANNEL_ID}/messages/{message_id}",
-            headers=HEADERS,
-            json=payload
-        )
-
-        if r.status_code == 200:
-            print("✅ Updated embed")
-            return
-        else:
-            print("⚠️ Failed to edit, posting new")
-
-    r = requests.post(
-        f"{DISCORD_API}/channels/{CHANNEL_ID}/messages",
-        headers=HEADERS,
-        json=payload
+    embed = discord.Embed(
+        title="✈️ Smugglers Flight Paths",
+        color=discord.Color.blue(),
+        timestamp=datetime.now(timezone.utc)
     )
 
-    r.raise_for_status()
-    new_id = r.json()["id"]
-    write_message_id(SHEET_NAME, new_id)
+    sorted_rows = sorted(
+        rows[2:], key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
+    )
 
-    print(f"🆕 Posted new embed {new_id}")
+    for row in sorted_rows:
+        if len(row) < 7:
+            continue
+        dest, outb, inbound, returning, purch, travsug, icc = row[:7]
+        outb = outb or "-"
+        inbound = inbound or "-"
+        returning = returning or "-"
+        purch = purch or "-"
+        icc = icc or ""
+        flag = country_emoji(dest)
 
-if __name__ == "__main__":
-    main()
+        embed.add_field(
+            name=f"{flag}{icc} {dest}",
+            value=(
+                f"🛫 Out: **{outb}** "
+                f"🛬 In: **{inbound}** "
+                f"↩ Return: **{returning}**\n"
+                f"📦 Item: **{purch}**"
+            ),
+            inline=False
+        )
+
+    embed.set_footer(text="Auto-updates via GitHub Actions")
+    return embed
+
+# =====================
+# POST OR UPDATE MESSAGE
+# =====================
+async def update_flight_message(channel):
+    rows = get_sheet_values(SPREADSHEET_SHEET)
+    if not rows:
+        return "❌ No sheet data"
+    
+    embed = build_embed(rows)
+
+    # Try reading existing message ID from sheet
+    existing_id = rows[0][0] if rows[0] else None
+    if existing_id:
+        try:
+            msg = await channel.fetch_message(int(existing_id))
+            await msg.edit(embed=embed)
+            return f"✅ Updated existing message {existing_id}"
+        except discord.NotFound:
+            existing_id = None
+
+    # Post new message
+    msg = await channel.send(embed=embed)
+    write_message_id(SPREADSHEET_SHEET, msg.id, cell="A1")
+    return f"🆕 Posted new message {msg.id}"
+
+# =====================
+# EVENTS
+# =====================
+@bot.event
+async def on_ready():
+    print(f"✅ Logged in as {bot.user}")
+    channel = bot.get_channel(CHANNEL_ID)
+    if not channel:
+        print("❌ Channel not found")
+        return
+    result = await update_flight_message(channel)
+    print(result)
+    await bot.close()  # stop bot after posting once
+
+# =====================
+# RUN
+# =====================
+bot.run(DISCORD_TOKEN)
