@@ -31,4 +31,4 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           FLIGHT_SHEET: travelDestinations
         run: |
-          python update_flights.py
+          python bot.py
