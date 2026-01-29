@@ -39,4 +39,4 @@ def set_message_id(message_id: str, sheet_name="travelDestinations"):
     """
     sh = client.open_by_key(SPREADSHEET_ID)
     worksheet = sh.worksheet(sheet_name)
-    worksheet.update("E1", message_id)
+    worksheet.update("A1", str(message_id))
