@@ -3,40 +3,27 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
-# =====================
-# CONFIG
-# =====================
 SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 SERVICE_ACCOUNT_INFO = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
 
-# Allow read and write
+# 🔑 MUST be full access (not readonly)
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# =====================
-# AUTH
-# =====================
-creds = Credentials.from_service_account_info(
+credentials = Credentials.from_service_account_info(
     SERVICE_ACCOUNT_INFO,
     scopes=SCOPES
 )
 
-client = gspread.authorize(creds)
+client = gspread.authorize(credentials)
 
-# =====================
-# READ SHEET
-# =====================
+def get_worksheet(sheet_name):
+    sheet = client.open_by_key(SPREADSHEET_ID)
+    return sheet.worksheet(sheet_name)
+
 def get_sheet_values(sheet_name):
-    sh = client.open_by_key(SPREADSHEET_ID)
-    worksheet = sh.worksheet(sheet_name)
-    return worksheet.get_all_values()
+    ws = get_worksheet(sheet_name)
+    return ws.get_all_values()
 
-# =====================
-# WRITE MESSAGE ID (serverless state)
-# =====================
-def set_message_id(message_id: str, sheet_name="travelDestinations"):
-    """
-    Writes the Discord message ID to cell A1
-    """
-    sh = client.open_by_key(SPREADSHEET_ID)
-    worksheet = sh.worksheet(sheet_name)
-    worksheet.update("A1", str(message_id))
+def write_message_id(sheet_name, message_id):
+    ws = get_worksheet(sheet_name)
+    ws.update("A1", [[str(message_id)]])
