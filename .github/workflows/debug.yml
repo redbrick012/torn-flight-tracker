@@ -1,8 +1,19 @@
-- name: Check JSON secret exists
-  run: |
-    if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
-      echo "JSON secret is missing!"
-      exit 1
-    else
-      echo "JSON secret loaded"
-    fi
+name: Debug JSON Secret
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-secret:
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - name: Check JSON secret exists
+        run: |
+          if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "JSON secret is missing!"
+            exit 1
+          else
+            echo "JSON secret loaded"
+          fi
