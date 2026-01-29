@@ -1,24 +1,23 @@
 import os
 import json
 import base64
-import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 
-# =====================
-# ENV
-# =====================
-SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
-GOOGLE_SERVICE_ACCOUNT_JSON_B64 = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
+GOOGLE_SERVICE_ACCOUNT_JSON_B64 = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON_B64"]
 
-# decode the base64 JSON
-SERVICE_ACCOUNT_INFO = json.loads(base64.b64decode(GOOGLE_SERVICE_ACCOUNT_JSON_B64))
+SERVICE_ACCOUNT_INFO = json.loads(
+    base64.b64decode(GOOGLE_SERVICE_ACCOUNT_JSON_B64).decode("utf-8")
+)
 
-# =====================
-# GOOGLE SHEETS CLIENT
-# =====================
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-creds = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
-client = gspread.authorize(creds)
+
+creds = Credentials.from_service_account_info(
+    SERVICE_ACCOUNT_INFO,
+    scopes=SCOPES,
+)
+
+service = build("sheets", "v4", credentials=creds)
 
 # =====================
 # FUNCTIONS
