@@ -1,21 +1,14 @@
 import os
 import requests
 from datetime import datetime, timezone
+from sheets import get_sheet_values, set_message_id
 
-from sheets import get_sheet_values, set_message_id  # ← add this helper
-
-# =====================
-# ENV
-# =====================
 DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 CHANNEL_ID = os.environ["FLIGHT_CHANNEL_ID"]
 SHEET_NAME = os.environ.get("FLIGHT_SHEET", "travelDestinations")
 
 API_BASE = "https://discord.com/api/v10"
 
-# =====================
-# FLAGS
-# =====================
 COUNTRY_EMOJIS = {
     "Torn": "🏙️",
     "Mexico": "🇲🇽",
@@ -34,23 +27,13 @@ COUNTRY_EMOJIS = {
 def country_emoji(country: str) -> str:
     return COUNTRY_EMOJIS.get(country, "🌍")
 
-# =====================
-# EMBED BUILDER
-# =====================
 def build_embed(rows):
     fields = []
-
-    sorted_rows = sorted(
-        rows[2:],
-        key=lambda r: r[0].lower() if r and r[0] else ""
-    )
-
+    sorted_rows = sorted(rows[2:], key=lambda r: r[0].lower() if r and r[0] else "")
     for row in sorted_rows:
         if len(row) < 7:
             continue
-
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
-
         fields.append({
             "name": f"{country_emoji(dest)}{icc or ''} {dest}",
             "value": (
@@ -61,7 +44,6 @@ def build_embed(rows):
             ),
             "inline": False
         })
-
     return {
         "title": "✈️ Smugglers Flight Paths",
         "color": 3447003,
@@ -70,14 +52,8 @@ def build_embed(rows):
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-# =====================
-# DISCORD HELPERS
-# =====================
 def discord_headers():
-    return {
-        "Authorization": f"Bot {DISCORD_TOKEN}",
-        "Content-Type": "application/json"
-    }
+    return {"Authorization": f"Bot {DISCORD_TOKEN}", "Content-Type": "application/json"}
 
 def edit_message(message_id, embed):
     url = f"{API_BASE}/channels/{CHANNEL_ID}/messages/{message_id}"
@@ -90,18 +66,10 @@ def post_message(embed):
     r.raise_for_status()
     return r.json()["id"]
 
-# =====================
-# MAIN
-# =====================
 def main():
     rows = get_sheet_values(SHEET_NAME)
-
-    # Assumption:
-    # Cell A1 contains the stored Discord message ID (or blank)
     stored_message_id = rows[0][0] if rows and rows[0] else None
-
     embed = build_embed(rows)
-
     if stored_message_id:
         success = edit_message(stored_message_id, embed)
         if success:
@@ -109,9 +77,8 @@ def main():
             return
         else:
             print("⚠️ Stored message missing, posting new")
-
     new_id = post_message(embed)
-    set_message_id(new_id)
+    set_message_id(new_id, SHEET_NAME)
     print(f"🆕 Posted new message: {new_id}")
 
 if __name__ == "__main__":
