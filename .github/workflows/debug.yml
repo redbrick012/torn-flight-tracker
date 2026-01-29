@@ -1,0 +1,8 @@
+- name: Check JSON secret exists
+  run: |
+    if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+      echo "JSON secret is missing!"
+      exit 1
+    else
+      echo "JSON secret loaded"
+    fi
