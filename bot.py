@@ -93,10 +93,25 @@ async def update_flight_message(force_new=False):
         return "❌ Channel not found"
 
     rows = get_sheet_values(SPREADSHEET_SHEET)
-    if not rows:
-        return "❌ No sheet data"
+    if not rows or len(rows) < 2:
+        return "⚠️ Sheet empty"
 
     embed = build_embed(rows)
+
+    posted_message_id = rows[0][0] if rows[0] else None
+
+    if posted_message_id and not force_new:
+        try:
+            msg = await channel.fetch_message(int(posted_message_id))
+            await msg.edit(embed=embed)
+            return "🔁 Message updated"
+        except (discord.NotFound, discord.Forbidden):
+            posted_message_id = None
+
+    # Post new message if missing
+    msg = await channel.send(embed=embed)
+    write_message_id(SPREADSHEET_SHEET, msg.id, cell=STATE_CELL)
+    return "🆕 New message posted"
 
     # Read message ID from sheet
     posted_message_id = rows[0][0] if rows[0] else None
@@ -119,8 +134,11 @@ async def update_flight_message(force_new=False):
 # =====================
 @tasks.loop(minutes=5)
 async def flight_task():
-    await update_flight_message()
-
+    try:
+        result = await update_flight_message()
+        print(f"[FlightTask] {result}")
+    except Exception as e:
+        print("❌ Flight task crashed:", e)
 # =====================
 # SLASH COMMANDS
 # =====================
