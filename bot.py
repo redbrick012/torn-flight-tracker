@@ -61,7 +61,7 @@ def build_embed(rows):
     embed = {
         "title": "✈️ Smugglers Flight Paths",
         "color": 0x3498db,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": now.isoformat(),
         "fields": []
     }
 
