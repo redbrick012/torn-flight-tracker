@@ -1,18 +1,13 @@
 name: Run Torn Flight Bot
 
 on:
-  workflow_dispatch:  # Allows manual trigger from GitHub
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    env:
-      # This is your Google Service Account JSON secret
-      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-      DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-      SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-      FLIGHT_SHEET: travelDestinations
-      FLIGHT_CHANNEL_ID: ${{ secrets.FLIGHT_CHANNEL_ID }}
 
     steps:
       - name: Checkout repository
@@ -26,16 +21,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install gspread google-auth requests
 
-      - name: Debug secret (optional)
+      - name: Run flight updater
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          FLIGHT_SHEET: travelDestinations
         run: |
-          if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
-            echo "❌ JSON secret missing"
-            exit 1
-          else
-            echo "✅ JSON secret loaded"
-          fi
-
-      - name: Run bot
-        run: python bot.py
+          python bot.py
