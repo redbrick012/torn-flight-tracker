@@ -80,8 +80,10 @@ def build_embed(rows):
             ),
             "inline": False
         })
-    embed["footer"] = {"text": "Auto-updates every 5 minutes"}
-    return embed
+    embed["footer"] = {
+        "text": f"Last updated: {now.strftime('%H:%M:%S UTC')} • Auto-refresh 5m"
+    }
+
 
 # =====================
 # SEND OR EDIT WEBHOOK
