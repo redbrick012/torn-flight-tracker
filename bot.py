@@ -1,21 +1,19 @@
 import os
 import json
 import requests
-import gspread
-from google.oauth2.service_account import Credentials
 from datetime import datetime, timezone
+
+from sheets import get_sheet_values
 
 # =====================
 # ENV
 # =====================
-WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
+DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
 SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 FLIGHT_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
 
-STATE_FILE = "state.json"
-
 # =====================
-# FLAGS (UNCHANGED)
+# FLAGS
 # =====================
 COUNTRY_EMOJIS = {
     "Torn": "<:city:1458205750617833596>",
@@ -36,44 +34,13 @@ def country_emoji(country: str) -> str:
     return COUNTRY_EMOJIS.get(country, "🌍")
 
 # =====================
-# GOOGLE SHEETS
-# =====================
-def get_sheet_values():
-    creds_info = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
-    scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
-    client = gspread.authorize(creds)
-
-    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(FLIGHT_SHEET)
-    return sheet.get_all_values()
-
-# =====================
-# STATE (MESSAGE ID)
-# =====================
-def load_state():
-    if not os.path.exists(STATE_FILE):
-        return {"message_id": None}
-    with open(STATE_FILE, "r") as f:
-        return json.load(f)
-
-def save_state(state):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f)
-
-# =====================
-# EMBED BUILDER (MATCHES ORIGINAL)
+# EMBED BUILDER
 # =====================
 def build_embed(rows):
-    embed = {
-        "title": "✈️ Smugglers Flight Paths",
-        "color": 0x3498db,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "fields": [],
-        "footer": {"text": "Auto-updates every 5 minutes"}
-    }
+    fields = []
 
     sorted_rows = sorted(
-        rows[2:],  # skip headers
+        rows[2:],  # skip headers + state row
         key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
     )
 
@@ -91,7 +58,7 @@ def build_embed(rows):
 
         flag = country_emoji(dest)
 
-        embed["fields"].append({
+        fields.append({
             "name": f"{flag}{icc} {dest}",
             "value": (
                 f"🛫 Out: **{outb}** "
@@ -102,40 +69,49 @@ def build_embed(rows):
             "inline": False
         })
 
+    embed = {
+        "title": "✈️ Smugglers Flight Paths",
+        "color": 0x3498DB,
+        "fields": fields,
+        "footer": {
+            "text": "Auto-updates every 5 minutes"
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
     return embed
-
-# =====================
-# DISCORD WEBHOOK UPDATE
-# =====================
-def send_or_update(embed, state):
-    payload = {"embeds": [embed]}
-
-    if state["message_id"]:
-        url = f"{WEBHOOK_URL}/messages/{state['message_id']}"
-        r = requests.patch(url, json=payload)
-    else:
-        r = requests.post(WEBHOOK_URL, json=payload)
-        r.raise_for_status()
-        state["message_id"] = r.json()["id"]
-
-    r.raise_for_status()
 
 # =====================
 # MAIN
 # =====================
 def main():
-    rows = get_sheet_values()
-    if not rows or len(rows) < 2:
-        print("⚠️ Sheet empty")
+    rows = get_sheet_values(FLIGHT_SHEET)
+
+    if not rows or len(rows) < 3:
+        print("⚠️ Sheet empty or malformed")
         return
 
-    state = load_state()
     embed = build_embed(rows)
 
-    send_or_update(embed, state)
-    save_state(state)
+    payload = {
+        "embeds": [embed]
+    }
 
-    print("✅ Flight message updated")
+    response = requests.post(
+        DISCORD_WEBHOOK_URL,
+        json=payload,
+        timeout=10
+    )
 
+    if response.status_code not in (200, 204):
+        raise RuntimeError(
+            f"❌ Discord webhook failed: {response.status_code} {response.text}"
+        )
+
+    print("✅ Flight embed sent/updated successfully")
+
+# =====================
+# RUN
+# =====================
 if __name__ == "__main__":
     main()
