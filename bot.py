@@ -95,20 +95,21 @@ def main():
 
         print(f"⚠️ Edit failed ({r.status_code}), posting new message")
 
-    # POST new message
-    r = requests.post(
-        DISCORD_WEBHOOK_URL,
-        json=payload,
-        timeout=10
-    )
+# POST new message (must use ?wait=true)
+r = requests.post(
+    f"{DISCORD_WEBHOOK_URL}?wait=true",
+    json=payload,
+    timeout=10
+)
 
-    if r.status_code != 200:
-        raise RuntimeError(f"❌ Webhook post failed: {r.status_code} {r.text}")
+if r.status_code not in (200, 201):
+    raise RuntimeError(f"❌ Webhook post failed: {r.status_code} {r.text}")
 
-    new_message_id = r.json()["id"]
-    write_message_id(FLIGHT_SHEET, new_message_id, cell=STATE_CELL)
+new_message_id = r.json()["id"]
+write_message_id(FLIGHT_SHEET, new_message_id, cell=STATE_CELL)
 
-    print(f"🆕 New webhook message posted ({new_message_id})")
+print(f"🆕 New webhook message posted ({new_message_id})")
+
 
 # =====================
 # RUN
