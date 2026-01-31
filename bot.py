@@ -75,32 +75,23 @@ def build_embed(rows):
 # =====================
 # WEBHOOK SENDER
 # =====================
-def send_webhook(embed, message_id=None):
-    url = DISCORD_WEBHOOK_URL
+def send_webhook(embed):
     payload = {"embeds": [embed]}
     headers = {"Content-Type": "application/json"}
 
-    if message_id:
-        url = f"{url}/messages/{message_id}"
-
     for attempt in range(5):
         try:
-            r = requests.patch(url, json=payload, headers=headers) if message_id else requests.post(url, json=payload, headers=headers)
+            r = requests.post(DISCORD_WEBHOOK_URL, json=payload, headers=headers)
             if r.status_code in (200, 201):
                 data = r.json()
                 return data["id"]
             elif r.status_code == 204:
-                # Success but no content (Discord PATCH success)
-                return message_id
-            elif r.status_code == 404:
-                # Message not found, need to post new
-                print("⚠️ Edit failed (404), posting new message")
-                message_id = None
-                continue
+                # Success but no content
+                return None
             else:
                 print(f"❌ Discord API error {r.status_code}: {r.text}")
         except Exception as e:
-            print("❌ Exception during webhook update:", e)
+            print("❌ Exception during webhook send:", e)
         time.sleep(2)
     raise RuntimeError("❌ Failed to send after 5 retries")
 
@@ -115,15 +106,15 @@ def main():
 
     embed = build_embed(rows)
 
-    # Get last message ID from sheet
-    last_msg_id = rows[0][0] if rows[0] else None
-
-    # Send webhook (edit or post new)
-    new_msg_id = send_webhook(embed, message_id=last_msg_id)
+    # Send new webhook message every time
+    new_msg_id = send_webhook(embed)
 
     # Store last webhook message ID in sheet
-    write_message_id(SPREADSHEET_SHEET, new_msg_id, cell=STATE_CELL)
-    print(f"✅ Webhook updated: {new_msg_id}")
+    if new_msg_id:
+        write_message_id(SPREADSHEET_SHEET, new_msg_id, cell=STATE_CELL)
+        print(f"✅ Webhook posted: {new_msg_id}")
+    else:
+        print("✅ Webhook posted (no ID returned)")
 
 if __name__ == "__main__":
     main()
