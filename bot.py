@@ -1,16 +1,15 @@
 import os
-import json
 import requests
 from datetime import datetime, timezone
 
-from sheets import get_sheet_values
+from sheets import get_sheet_values, write_message_id
 
 # =====================
 # ENV
 # =====================
 DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
-SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 FLIGHT_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
+STATE_CELL = "A1"  # where message_id is stored in the sheet
 
 # =====================
 # FLAGS
@@ -40,8 +39,8 @@ def build_embed(rows):
     fields = []
 
     sorted_rows = sorted(
-        rows[2:],  # skip headers + state row
-        key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
+        rows[2:],  # skip state + headers
+        key=lambda r: r[0].lower() if r and r[0] else ""
     )
 
     for row in sorted_rows:
@@ -50,36 +49,24 @@ def build_embed(rows):
 
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
 
-        outb = outb or "-"
-        inbound = inbound or "-"
-        returning = returning or "-"
-        purch = purch or "-"
-        icc = icc or ""
-
-        flag = country_emoji(dest)
-
         fields.append({
-            "name": f"{flag}{icc} {dest}",
+            "name": f"{country_emoji(dest)}{icc or ''} {dest}",
             "value": (
-                f"🛫 Out: **{outb}** "
-                f"🛬 In: **{inbound}** "
-                f"↩ Return: **{returning}**\n"
-                f"📦 Item: **{purch}**"
+                f"🛫 Out: **{outb or '-'}** "
+                f"🛬 In: **{inbound or '-'}** "
+                f"↩ Return: **{returning or '-'}**\n"
+                f"📦 Item: **{purch or '-'}**"
             ),
             "inline": False
         })
 
-    embed = {
+    return {
         "title": "✈️ Smugglers Flight Paths",
         "color": 0x3498DB,
         "fields": fields,
-        "footer": {
-            "text": "Auto-updates every 5 minutes"
-        },
+        "footer": {"text": "Auto-updates every 5 minutes"},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
-
-    return embed
 
 # =====================
 # MAIN
@@ -88,27 +75,40 @@ def main():
     rows = get_sheet_values(FLIGHT_SHEET)
 
     if not rows or len(rows) < 3:
-        print("⚠️ Sheet empty or malformed")
+        print("⚠️ Sheet empty or invalid")
         return
 
     embed = build_embed(rows)
+    payload = {"embeds": [embed]}
 
-    payload = {
-        "embeds": [embed]
-    }
+    # Read stored message ID
+    message_id = rows[0][0] if rows[0] else None
 
-    response = requests.post(
+    # Try EDIT first
+    if message_id:
+        edit_url = f"{DISCORD_WEBHOOK_URL}/messages/{message_id}"
+        r = requests.patch(edit_url, json=payload, timeout=10)
+
+        if r.status_code == 200:
+            print("🔁 Webhook message updated")
+            return
+
+        print(f"⚠️ Edit failed ({r.status_code}), posting new message")
+
+    # POST new message
+    r = requests.post(
         DISCORD_WEBHOOK_URL,
         json=payload,
         timeout=10
     )
 
-    if response.status_code not in (200, 204):
-        raise RuntimeError(
-            f"❌ Discord webhook failed: {response.status_code} {response.text}"
-        )
+    if r.status_code != 200:
+        raise RuntimeError(f"❌ Webhook post failed: {r.status_code} {r.text}")
 
-    print("✅ Flight embed sent/updated successfully")
+    new_message_id = r.json()["id"]
+    write_message_id(FLIGHT_SHEET, new_message_id, cell=STATE_CELL)
+
+    print(f"🆕 New webhook message posted ({new_message_id})")
 
 # =====================
 # RUN
