@@ -1,7 +1,6 @@
 import os
 import json
 import requests
-import time
 from datetime import datetime, timezone
 from sheets import get_sheet_values, write_message_id
 
@@ -9,12 +8,8 @@ from sheets import get_sheet_values, write_message_id
 # ENV
 # =====================
 WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
-SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
-FLIGHT_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
-STATE_CELL = "A1"
-GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "{}")
-MAX_RETRIES = 5
-RETRY_DELAY = 2  # seconds (exponential backoff multiplier applied)
+SPREADSHEET_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
+STATE_CELL = "A1"  # where we store the last message ID
 
 # =====================
 # FLAGS
@@ -25,7 +20,7 @@ COUNTRY_EMOJIS = {
     "Cayman Islands": "<:ky:1458203876544221459>",
     "Canada": "<:ca:1458204026813415517>",
     "Hawaii": "<:ushi:1458203802342522981>",
-    "United Kingdom": "<:gb:1458203934647917>",
+    "United Kingdom": "<:gb:1458203934647910441>",
     "Argentina": "<:ar:1458204051970986170>",
     "Switzerland": "<:ch:1458203997964861590>",
     "Japan": "<:jp:1458203900594094270>",
@@ -38,16 +33,19 @@ def country_emoji(country: str) -> str:
     return COUNTRY_EMOJIS.get(country, "🌍")
 
 # =====================
-# EMBED BUILDER
+# BUILD EMBED
 # =====================
-def build_embed(rows):
-    sorted_rows = sorted(
-        rows[1:],  # skip headers
-        key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
-    )
+def build_payload(rows):
+    """Returns JSON payload for Discord webhook."""
+    embed = {
+        "title": "✈️ Smugglers Flight Paths",
+        "color": 3447003,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "fields": [],
+        "footer": {"text": "Auto-updates every 5 minutes"}
+    }
 
-    fields = []
-    for row in sorted_rows:
+    for row in rows[2:]:  # skip headers
         if len(row) < 7:
             continue
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
@@ -57,76 +55,55 @@ def build_embed(rows):
         purch = purch or "-"
         icc = icc or ""
         flag = country_emoji(dest)
-        fields.append({
+        embed["fields"].append({
             "name": f"{flag}{icc} {dest}",
-            "value": (
-                f"🛫 Out: **{outb}** "
-                f"🛬 In: **{inbound}** "
-                f"↩ Return: **{returning}**\n"
-                f"📦 Item: **{purch}**"
-            ),
+            "value": f"🛫 Out: **{outb}** 🛬 In: **{inbound}** ↩ Return: **{returning}**\n📦 Item: **{purch}**",
             "inline": False
         })
-
-    embed = {
-        "title": "✈️ Smugglers Flight Paths",
-        "color": 3447003,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "fields": fields,
-        "footer": {"text": "Auto-updates every 5 minutes"}
-    }
-    return embed
+    return {"embeds": [embed]}
 
 # =====================
-# SEND WITH RETRY
+# SEND / EDIT MESSAGE
 # =====================
-def send_request(method, url, **kwargs):
-    for attempt in range(MAX_RETRIES):
-        r = requests.request(method, url, **kwargs)
-        if r.status_code in (200, 201, 204):
-            return r
-        elif r.status_code == 429:  # rate limit
-            retry_after = r.json().get("retry_after", RETRY_DELAY)
-            print(f"⚠️ Rate limited. Waiting {retry_after:.1f}s before retry...")
-            time.sleep(retry_after)
-        else:
-            print(f"❌ Discord API error {r.status_code}: {r.text}")
-            time.sleep(RETRY_DELAY * (attempt + 1))
-    raise RuntimeError(f"❌ Failed to send after {MAX_RETRIES} retries")
-
-# =====================
-# UPDATE LOGIC
-# =====================
-def update_flight_webhook():
-    rows = get_sheet_values(FLIGHT_SHEET)
+def send_flight_update():
+    rows = get_sheet_values(SPREADSHEET_SHEET)
     if not rows or len(rows) < 2:
-        print("⚠️ No sheet data found")
+        print("⚠️ Sheet empty, nothing to send")
         return
 
-    embed = build_embed(rows)
-    payload = {"embeds": [embed]}
-
-    posted_message_id = rows[0][0] if rows[0] else None
+    payload = build_payload(rows)
+    # Read last message ID from sheet
+    last_message_id = rows[0][0] if rows[0] else None
 
     try:
-        if posted_message_id:
-            r = send_request("PATCH", f"{WEBHOOK_URL}/messages/{posted_message_id}", json=payload)
-            print(f"🔁 Edited previous webhook message {posted_message_id}")
-            return
-
-        r = send_request("POST", WEBHOOK_URL, json=payload)
-        msg_data = r.json() if r.content else {}
-        new_msg_id = msg_data.get("id")
-        if new_msg_id:
-            write_message_id(FLIGHT_SHEET, new_msg_id, cell=STATE_CELL)
-            print(f"🆕 Posted new webhook message {new_msg_id}")
+        if last_message_id:
+            # Try to edit existing webhook message
+            r = requests.patch(
+                f"{WEBHOOK_URL}/messages/{last_message_id}",
+                json=payload
+            )
+            if r.status_code == 404:
+                print("⚠️ Previous message not found, posting new message")
+                last_message_id = None
+            elif r.status_code >= 400:
+                print(f"❌ Discord API error {r.status_code}: {r.text}")
+                last_message_id = None
+            else:
+                print("🔁 Edited existing message")
+                return
+        # Post new message if needed
+        r = requests.post(WEBHOOK_URL, json=payload)
+        if r.status_code in (200, 204):
+            msg_id = r.json()["id"]
+            write_message_id(SPREADSHEET_SHEET, msg_id, cell=STATE_CELL)
+            print("🆕 Posted new message")
         else:
-            print("🆕 Posted new webhook message (ID not returned)")
+            print(f"❌ Discord API error {r.status_code}: {r.text}")
     except Exception as e:
         print("❌ Exception during webhook update:", e)
 
 # =====================
-# MAIN
+# RUN
 # =====================
 if __name__ == "__main__":
-    update_flight_webhook()
+    send_flight_update()
