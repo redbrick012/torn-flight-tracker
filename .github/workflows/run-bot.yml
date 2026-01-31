@@ -1,25 +1,16 @@
-name: Update Torn Flights
+name: Update Flights
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # every 5 minutes
-  workflow_dispatch:       # allows manual trigger
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 jobs:
-  update-flights:
+  update:
     runs-on: ubuntu-latest
-    env:
-      # Discord webhook URL to post/edit message
-      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-      # Google Sheet access
-      SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-      FLIGHT_SHEET: travelDestinations
-      STATE_CELL: A1        # cell to store last message ID
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -31,21 +22,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install gspread google-auth requests
 
-      - name: Debug secrets (optional)
-        run: |
-          if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
-            echo "❌ Google JSON missing"
-            exit 1
-          else
-            echo "✅ Google JSON loaded"
-          fi
-
-          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
-            echo "❌ Discord webhook missing"
-            exit 1
-          else
-            echo "✅ Discord webhook loaded"
-          fi
-
       - name: Run flight updater
-        run: python bot.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          FLIGHT_SHEET: travelDestinations
+        run: |
+          python bot.py
