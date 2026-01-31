@@ -1,16 +1,20 @@
 import os
 import json
 import requests
+import time
 from datetime import datetime, timezone
 from sheets import get_sheet_values, write_message_id
 
 # =====================
 # ENV
 # =====================
-DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
+WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
+SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 FLIGHT_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
-STATE_CELL = "A1"  # cell where message ID is stored
-print("JSON length:", len(os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "")))
+STATE_CELL = "A1"
+GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "{}")
+MAX_RETRIES = 5
+RETRY_DELAY = 2  # seconds (exponential backoff multiplier applied)
 
 # =====================
 # FLAGS
@@ -21,7 +25,7 @@ COUNTRY_EMOJIS = {
     "Cayman Islands": "<:ky:1458203876544221459>",
     "Canada": "<:ca:1458204026813415517>",
     "Hawaii": "<:ushi:1458203802342522981>",
-    "United Kingdom": "<:gb:1458203934647910441>",
+    "United Kingdom": "<:gb:1458203934647917>",
     "Argentina": "<:ar:1458204051970986170>",
     "Switzerland": "<:ch:1458203997964861590>",
     "Japan": "<:jp:1458203900594094270>",
@@ -37,87 +41,92 @@ def country_emoji(country: str) -> str:
 # EMBED BUILDER
 # =====================
 def build_embed(rows):
-    embed = {
-        "title": "✈️ Smugglers Flight Paths",
-        "color": 3447003,  # blue
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "fields": [],
-        "footer": {"text": "Auto-updates every 5 minutes"}
-    }
-
     sorted_rows = sorted(
-        rows[2:],  # skip headers
+        rows[1:],  # skip headers
         key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
     )
 
+    fields = []
     for row in sorted_rows:
         if len(row) < 7:
             continue
-
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
-
         outb = outb or "-"
         inbound = inbound or "-"
         returning = returning or "-"
         purch = purch or "-"
         icc = icc or ""
-
         flag = country_emoji(dest)
-
-        embed["fields"].append({
+        fields.append({
             "name": f"{flag}{icc} {dest}",
-            "value": f"🛫 Out: **{outb}** 🛬 In: **{inbound}** ↩ Return: **{returning}**\n📦 Item: **{purch}**",
+            "value": (
+                f"🛫 Out: **{outb}** "
+                f"🛬 In: **{inbound}** "
+                f"↩ Return: **{returning}**\n"
+                f"📦 Item: **{purch}**"
+            ),
             "inline": False
         })
 
+    embed = {
+        "title": "✈️ Smugglers Flight Paths",
+        "color": 3447003,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "fields": fields,
+        "footer": {"text": "Auto-updates every 5 minutes"}
+    }
     return embed
+
+# =====================
+# SEND WITH RETRY
+# =====================
+def send_request(method, url, **kwargs):
+    for attempt in range(MAX_RETRIES):
+        r = requests.request(method, url, **kwargs)
+        if r.status_code in (200, 201, 204):
+            return r
+        elif r.status_code == 429:  # rate limit
+            retry_after = r.json().get("retry_after", RETRY_DELAY)
+            print(f"⚠️ Rate limited. Waiting {retry_after:.1f}s before retry...")
+            time.sleep(retry_after)
+        else:
+            print(f"❌ Discord API error {r.status_code}: {r.text}")
+            time.sleep(RETRY_DELAY * (attempt + 1))
+    raise RuntimeError(f"❌ Failed to send after {MAX_RETRIES} retries")
 
 # =====================
 # UPDATE LOGIC
 # =====================
-def update_flight_message():
+def update_flight_webhook():
     rows = get_sheet_values(FLIGHT_SHEET)
     if not rows or len(rows) < 2:
-        print("⚠️ Sheet empty")
+        print("⚠️ No sheet data found")
         return
 
     embed = build_embed(rows)
-
-    # Read message ID from sheet
-    posted_message_id = rows[0][0] if rows[0] else None
-
     payload = {"embeds": [embed]}
 
-    # Try edit first
-    if posted_message_id:
-        r = requests.patch(
-            f"{DISCORD_WEBHOOK_URL}/messages/{posted_message_id}?wait=true",
-            json=payload,
-            timeout=10
-        )
-        if r.status_code == 404:
-            print("⚠️ Edit failed (404), posting new message")
-            posted_message_id = None
-        elif not (200 <= r.status_code < 300):
-            raise RuntimeError(f"❌ Webhook edit failed: {r.status_code} {r.text}")
-        else:
-            print(f"🔁 Webhook message {posted_message_id} edited successfully")
+    posted_message_id = rows[0][0] if rows[0] else None
+
+    try:
+        if posted_message_id:
+            r = send_request("PATCH", f"{WEBHOOK_URL}/messages/{posted_message_id}", json=payload)
+            print(f"🔁 Edited previous webhook message {posted_message_id}")
             return
 
-    # Post new message
-    r = requests.post(f"{DISCORD_WEBHOOK_URL}?wait=true", json=payload, timeout=10)
-    if not (200 <= r.status_code < 300):
-        raise RuntimeError(f"❌ Webhook post failed: {r.status_code} {r.text}")
-
-    new_message_id = r.json()["id"]
-    write_message_id(FLIGHT_SHEET, new_message_id, cell=STATE_CELL)
-    print(f"🆕 New webhook message posted ({new_message_id})")
+        r = send_request("POST", WEBHOOK_URL, json=payload)
+        msg_data = r.json() if r.content else {}
+        new_msg_id = msg_data.get("id")
+        if new_msg_id:
+            write_message_id(FLIGHT_SHEET, new_msg_id, cell=STATE_CELL)
+            print(f"🆕 Posted new webhook message {new_msg_id}")
+        else:
+            print("🆕 Posted new webhook message (ID not returned)")
+    except Exception as e:
+        print("❌ Exception during webhook update:", e)
 
 # =====================
 # MAIN
 # =====================
-def main():
-    update_flight_message()
-
 if __name__ == "__main__":
-    main()
+    update_flight_webhook()
