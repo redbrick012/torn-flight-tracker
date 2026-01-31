@@ -1,15 +1,19 @@
 import os
 import json
+import time
 import requests
 from datetime import datetime, timezone
-from sheets import get_sheet_values, write_message_id
+from sheets import get_sheet_values, write_message_id, read_message_id
 
 # =====================
 # ENV
 # =====================
-WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
+WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 SPREADSHEET_SHEET = os.environ.get("FLIGHT_SHEET", "travelDestinations")
-STATE_CELL = "A1"  # where we store the last message ID
+STATE_CELL = "A1"  # cell to store Discord message ID
+
+if not WEBHOOK_URL:
+    raise RuntimeError("❌ DISCORD_WEBHOOK_URL not set")
 
 # =====================
 # FLAGS
@@ -33,77 +37,97 @@ def country_emoji(country: str) -> str:
     return COUNTRY_EMOJIS.get(country, "🌍")
 
 # =====================
-# BUILD EMBED
+# EMBED BUILDER
 # =====================
-def build_payload(rows):
-    """Returns JSON payload for Discord webhook."""
+def build_embed(rows):
     embed = {
         "title": "✈️ Smugglers Flight Paths",
-        "color": 3447003,
+        "color": 3447003,  # blue
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "fields": [],
         "footer": {"text": "Auto-updates every 5 minutes"}
     }
 
-    for row in rows[2:]:  # skip headers
+    sorted_rows = sorted(
+        rows[2:],  # skip headers
+        key=lambda r: r[0].lower() if len(r) > 0 and r[0] else ""
+    )
+
+    for row in sorted_rows:
         if len(row) < 7:
             continue
+
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
+
         outb = outb or "-"
         inbound = inbound or "-"
         returning = returning or "-"
         purch = purch or "-"
         icc = icc or ""
+
         flag = country_emoji(dest)
+
         embed["fields"].append({
             "name": f"{flag}{icc} {dest}",
             "value": f"🛫 Out: **{outb}** 🛬 In: **{inbound}** ↩ Return: **{returning}**\n📦 Item: **{purch}**",
             "inline": False
         })
-    return {"embeds": [embed]}
+
+    return embed
 
 # =====================
-# SEND / EDIT MESSAGE
+# MESSAGE POST/EDIT
 # =====================
-def send_flight_update():
+def send_webhook(embed):
+    """Send or edit message via webhook, retrying if needed."""
+    message_id = read_message_id(SPREADSHEET_SHEET, STATE_CELL)
+    payload = {"embeds": [embed]}
+
+    headers = {"Content-Type": "application/json"}
+
+    for attempt in range(5):
+        try:
+            if message_id:
+                url = f"{WEBHOOK_URL}/messages/{message_id}"
+                r = requests.patch(url, headers=headers, json=payload)
+                if r.status_code == 404:
+                    print("⚠️ Edit failed (404), posting new message")
+                    message_id = None
+                    continue
+                elif r.status_code >= 400:
+                    print(f"❌ Discord API error {r.status_code}: {r.text}")
+                    time.sleep(2)
+                    continue
+                print("🔁 Webhook message updated")
+                return message_id
+            else:
+                r = requests.post(WEBHOOK_URL, headers=headers, json=payload)
+                if r.status_code >= 400:
+                    print(f"❌ Discord API error {r.status_code}: {r.text}")
+                    time.sleep(2)
+                    continue
+                data = r.json()
+                message_id = data["id"]
+                write_message_id(SPREADSHEET_SHEET, message_id, STATE_CELL)
+                print("🆕 New webhook message posted")
+                return message_id
+        except Exception as e:
+            print("❌ Exception during webhook update:", e)
+            time.sleep(2)
+
+    raise RuntimeError("❌ Failed to send after 5 retries")
+
+# =====================
+# MAIN
+# =====================
+def main():
     rows = get_sheet_values(SPREADSHEET_SHEET)
     if not rows or len(rows) < 2:
-        print("⚠️ Sheet empty, nothing to send")
+        print("⚠️ Sheet empty, skipping update")
         return
 
-    payload = build_payload(rows)
-    # Read last message ID from sheet
-    last_message_id = rows[0][0] if rows[0] else None
+    embed = build_embed(rows)
+    send_webhook(embed)
 
-    try:
-        if last_message_id:
-            # Try to edit existing webhook message
-            r = requests.patch(
-                f"{WEBHOOK_URL}/messages/{last_message_id}",
-                json=payload
-            )
-            if r.status_code == 404:
-                print("⚠️ Previous message not found, posting new message")
-                last_message_id = None
-            elif r.status_code >= 400:
-                print(f"❌ Discord API error {r.status_code}: {r.text}")
-                last_message_id = None
-            else:
-                print("🔁 Edited existing message")
-                return
-        # Post new message if needed
-        r = requests.post(WEBHOOK_URL, json=payload)
-        if r.status_code in (200, 204):
-            msg_id = r.json()["id"]
-            write_message_id(SPREADSHEET_SHEET, msg_id, cell=STATE_CELL)
-            print("🆕 Posted new message")
-        else:
-            print(f"❌ Discord API error {r.status_code}: {r.text}")
-    except Exception as e:
-        print("❌ Exception during webhook update:", e)
-
-# =====================
-# RUN
-# =====================
 if __name__ == "__main__":
-    send_flight_update()
+    main()
