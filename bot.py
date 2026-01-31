@@ -57,7 +57,6 @@ def country_emoji(country):
 # =====================
 # BUILD DISCORD EMBED
 # =====================
-def build_embed(rows):
 from datetime import datetime, timezone
 
 def build_embed(rows):
