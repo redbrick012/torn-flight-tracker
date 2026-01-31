@@ -58,6 +58,11 @@ def country_emoji(country):
 # BUILD DISCORD EMBED
 # =====================
 def build_embed(rows):
+from datetime import datetime, timezone
+
+def build_embed(rows):
+    now = datetime.now(timezone.utc)
+
     embed = {
         "title": "✈️ Smugglers Flight Paths",
         "color": 0x3498db,
@@ -69,7 +74,9 @@ def build_embed(rows):
     for row in rows[2:]:
         if len(row) < 7:
             continue
+
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
+
         embed["fields"].append({
             "name": f"{country_emoji(dest)}{icc} {dest}",
             "value": (
@@ -80,9 +87,13 @@ def build_embed(rows):
             ),
             "inline": False
         })
+
+    # 🔑 Forces visible update every run
     embed["footer"] = {
         "text": f"Last updated: {now.strftime('%H:%M:%S UTC')} • Auto-refresh 5m"
     }
+
+    return embed
 
 
 # =====================
