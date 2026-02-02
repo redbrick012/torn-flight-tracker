@@ -3,7 +3,7 @@ name: Update Flights
 on:
   workflow_dispatch:  # allows manual trigger
   schedule:
-    - cron: "*/5 * * * *"  # every 5 minutes
+    - cron: "* * * * *"  # every 5 minutes
 
 jobs:
   update:
