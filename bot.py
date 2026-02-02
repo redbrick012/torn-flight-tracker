@@ -8,11 +8,14 @@ import gspread
 # =====================
 # ENV
 # =====================
-WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
+DISCORD_TOKEN = os.environ["DISCORD_TOKEN"]
 SPREADSHEET_ID = os.environ["SPREADSHEET_ID"]
 SHEET_NAME = os.environ.get("FLIGHT_SHEET", "travelDestinations")
 STATE_CELL = "A1"  # Where to store the Discord message ID
 SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+
+if not DISCORD_TOKEN:
+    raise RuntimeError("DISCORD_TOKEN not set")
 
 # =====================
 # GOOGLE SHEETS SETUP
@@ -26,7 +29,6 @@ def get_rows():
     return ws.get_all_values()
 
 def write_message_id(message_id):
-    # Must be list of lists for gspread
     ws.update(STATE_CELL, [[str(message_id)]])
 
 def read_message_id():
@@ -57,11 +59,8 @@ def country_emoji(country):
 # =====================
 # BUILD DISCORD EMBED
 # =====================
-from datetime import datetime, timezone
-
 def build_embed(rows):
     now = datetime.now(timezone.utc)
-
     embed = {
         "title": "✈️ Smugglers Flight Paths",
         "color": 0x3498db,
@@ -69,13 +68,10 @@ def build_embed(rows):
         "fields": []
     }
 
-    # skip header row
     for row in rows[2:]:
         if len(row) < 7:
             continue
-
         dest, outb, inbound, returning, purch, travsug, icc = row[:7]
-
         embed["fields"].append({
             "name": f"{country_emoji(dest)}{icc} {dest}",
             "value": (
@@ -87,39 +83,40 @@ def build_embed(rows):
             "inline": False
         })
 
-    # 🔑 Forces visible update every run
     embed["footer"] = {
         "text": f"Last updated: {now.strftime('%H:%M:%S UTC')} • Auto-refresh 5m"
     }
 
     return embed
 
-
 # =====================
-# SEND OR EDIT WEBHOOK
+# SEND OR EDIT MESSAGE
 # =====================
-def send_webhook(embed):
+def send_discord_message(embed):
     last_msg_id = read_message_id()
+    headers = {
+        "Authorization": f"Bot {DISCORD_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
     payload = {"embeds": [embed]}
 
-    headers = {"Content-Type": "application/json"}
-
-    # Try to edit existing message
     if last_msg_id:
-        edit_url = f"{WEBHOOK_URL}/messages/{last_msg_id}?wait=true"
-        r = requests.patch(edit_url, json=payload, headers=headers)
-        if r.status_code == 200:
+        # PATCH existing message
+        edit_url = f"https://discord.com/api/v10/channels/{os.environ['CHANNEL_ID']}/messages/{last_msg_id}"
+        r = requests.patch(edit_url, headers=headers, json=payload)
+        if r.status_code in (200, 204):
             print(f"🔁 Edited existing message {last_msg_id}")
             return last_msg_id
         else:
-            print(f"⚠️ Edit failed ({r.status_code}), posting new message")
+            print(f"⚠️ Failed to edit ({r.status_code}), will POST a new message")
 
-    # Post new message if edit failed or missing
-    r = requests.post(f"{WEBHOOK_URL}?wait=true", json=payload, headers=headers)
-    if r.status_code in (200, 204):
-        new_msg_id = r.json().get("id") if r.status_code == 200 else None
-        if new_msg_id:
-            write_message_id(new_msg_id)
+    # POST new message
+    post_url = f"https://discord.com/api/v10/channels/{os.environ['CHANNEL_ID']}/messages"
+    r = requests.post(post_url, headers=headers, json=payload)
+    if r.status_code in (200, 201):
+        new_msg_id = r.json().get("id")
+        write_message_id(new_msg_id)
         print(f"🆕 Posted new message {new_msg_id}")
         return new_msg_id
     else:
@@ -139,10 +136,10 @@ def main():
     retries = 0
     while retries < 5:
         try:
-            send_webhook(embed)
+            send_discord_message(embed)
             break
         except Exception as e:
-            print("❌ Exception during webhook update:", e)
+            print("❌ Exception:", e)
             retries += 1
             time.sleep(2)
     else:
