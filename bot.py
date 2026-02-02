@@ -106,7 +106,7 @@ def send_webhook(embed):
 
     # Try to edit existing message
     if last_msg_id:
-        edit_url = f"{WEBHOOK_URL}/messages/{last_msg_id}"
+        edit_url = f"{WEBHOOK_URL}/messages/{last_msg_id}?wait=true"
         r = requests.patch(edit_url, json=payload, headers=headers)
         if r.status_code == 200:
             print(f"🔁 Edited existing message {last_msg_id}")
@@ -115,7 +115,7 @@ def send_webhook(embed):
             print(f"⚠️ Edit failed ({r.status_code}), posting new message")
 
     # Post new message if edit failed or missing
-    r = requests.post(WEBHOOK_URL, json=payload, headers=headers)
+    r = requests.post(f"{WEBHOOK_URL}?wait=true", json=payload, headers=headers)
     if r.status_code in (200, 204):
         new_msg_id = r.json().get("id") if r.status_code == 200 else None
         if new_msg_id:
