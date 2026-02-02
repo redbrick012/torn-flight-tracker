@@ -1,4 +1,4 @@
-name: Update Flights
+name: Update Flights Webhook
 
 on:
   workflow_dispatch:  # allows manual trigger
@@ -29,4 +29,4 @@ jobs:
           pip install gspread requests
 
       - name: Run flight updater
-        run: python bot.py
+        run: python daily_stats_webhook.py
