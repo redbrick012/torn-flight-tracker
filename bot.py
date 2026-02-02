@@ -82,7 +82,7 @@ def build_embed(rows):
         })
 
     embed["footer"] = {
-        "text": f"Last updated: {now.strftime('%H:%M:%S UTC')} • Auto-refresh 5m"
+        "text": f"Last updated: {now.strftime('%H:%M:%S UTC')}"
     }
 
     return embed
