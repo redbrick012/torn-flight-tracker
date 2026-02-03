@@ -2,8 +2,8 @@ name: Update Flights
 
 on:
   workflow_dispatch: {}
-  schedule:
-    - cron: "*/5 * * * *"  # every 5 minutes UTC
+ # schedule:
+ #   - cron: "*/5 * * * *"  # every 5 minutes UTC
 
 jobs:
   update:
